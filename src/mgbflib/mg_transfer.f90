@@ -39,6 +39,7 @@ use mpi
 use mg_timers
 use mgbf_kinds, only: r_kind,i_kind
 use mgbf_utils,only : contains_nonzero
+use phint1
 
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 contains
@@ -87,7 +88,7 @@ include "type_intstat_locpointer.inc"
 include "type_parameter_point2this.inc"
 include "type_intstat_point2this.inc"
 !----------------------------------------------------------------------
-write(6,*)'filt_toanal_allmap ',km_a_all,' ',km_all,' ',nm,' ',im,' ',mm,' ',jm
+!write(6,*)'filt_toanal_allmap ',km_a_all,' ',km_all,' ',nm,' ',im,' ',mm,' ',jm
 !cltothink if(km_a_all==km_all.and.nm==im.and.mm==jm) then
 !clttothink    WORKA=VALL(1:km_all,1:im,1:jm)
 !clttothink   VALL=0.
@@ -137,30 +138,40 @@ if(2.gt.3) then
   else
 !clttothink
 
+!$omp parallel do private(L) schedule(static)
     do L=1,lm
       F3D(:,:,:,L)=A3D(:,:,:,L)
     enddo
+!$omp end parallel do
 
   endif
 
       call this%C2S_ens(F3D,WORK,1,nm,1,mm,lm,km,km_all)
 endif !2.gt.3 
      if(lm_a>lm) then
+!$omp parallel do private(ivar) schedule(static)
       do ivar=1,this%km2 !2dvar is directly passed
-        work(ivar,:,:)=worka(ivar,:,:)
+        work(this%km_all-ivar+1,:,:)=worka(this%km_all-ivar+1,:,:)
       enddo
+!$omp end parallel do
       
       do ivar=1,this%km3
-         lev1_a=this%km2+1+(ivar-1)*this%lm_a
-         lev1_f=this%km2+1+(ivar-1)*this%lm
+         lev1_a=1+(ivar-1)*this%lm_a
+         lev1_f=1+(ivar-1)*this%lm
          lev2_a=lev1_a+this%lm_a-1
          lev2_f=lev1_f+this%lm-1
         
 !clt        call this%lwq_vertical_adjoint(nm_in,km_in,imin,imax,jmin,jmax,c1,c2,c3,c4,kref,w,f)
 !cltorg        call this%lwq_vertical_adjoint(this%lm_a,this%lm,1,nm,1,mm,this%cvf1,this%cvf2,this%cvf3,this%cvf4,this%lref,  &
 !clt             worka(lev1_a:lev2_a,:,:),work(lev1_f:lev2_f,:,:))
-        call this%test_vertical_interpolation_adj(this%lm,this%lm_a,1,nm,1,mm, work(lev1_f:lev2_f,:,:), &
-             worka(lev1_a:lev2_a,:,:))
+!#        if (this%l_vert_stretched_filtgrid) then
+!        write(6,*)'thinkdeb999 l_vert_stretched_filtgrid 2 is ',this%l_vert_stretched_filtgrid
+  
+          call intgrid_f2a_3d_ad_top2bot_fast(this%lm_a-1,this%lm-1,nm,mm,this%zofis,worka(lev1_a:lev2_a,:,:),work(lev1_f:lev2_f,:,:))
+!        else
+!          call this%test_vertical_interpolation_adj(this%lm,this%lm_a,1,nm,1,mm, work(lev1_f:lev2_f,:,:), &
+!             worka(lev1_a:lev2_a,:,:))
+!        endif
        enddo
       else
         work=worka
@@ -197,54 +208,30 @@ include "type_intstat_point2this.inc"
      allocate(WORK(km_all,1:nm,1:mm))
     call this%filt_to_anal(WORK)  !cltadded
      if(lm_a>lm) then
+!$omp parallel do private(ivar) schedule(static)
       do ivar=1,this%km2 !2dvar is directly passed
-        worka(ivar,:,:)=work(ivar,:,:)
+        worka(this%km_a_all-ivar+1,:,:)=work(this%km_all-ivar+1,:,:)
       enddo
+!$omp end parallel do
       
       do ivar=1,this%km3
-         lev1_a=this%km2+1+(ivar-1)*this%lm_a
-         lev1_f=this%km2+1+(ivar-1)*this%lm
+         lev1_a=1+(ivar-1)*this%lm_a
+         lev1_f=1+(ivar-1)*this%lm
          lev2_a=lev1_a+this%lm_a-1
          lev2_f=lev1_f+this%lm-1
 !clt        call this%lwq_vertical_direct(this%lm,this%lm_a,1,nm,1,mm,this%cvf1,this%cvf2,this%cvf3,this%cvf4,this%lref,  &
 !clt             work(lev1_f:lev2_f,:,:),worka(lev1_a:lev2_a,:,:))
-        call this%test_vertical_interpolation(this%lm,this%lm_a,1,nm,1,mm, work(lev1_f:lev2_f,:,:), &
-             worka(lev1_a:lev2_a,:,:))
+!        if (this%l_vert_stretched_filtgrid) then
+          call intgrid_f2a_3d_top2bot_fast(this%lm_a-1,this%lm-1,nm,mm,this%zofis,worka(lev1_a:lev2_a,:,:),work(lev1_f:lev2_f,:,:))
+!        else
+!        call this%test_vertical_interpolation(this%lm,this%lm_a,1,nm,1,mm, work(lev1_f:lev2_f,:,:), &
+!             worka(lev1_a:lev2_a,:,:))
+!        endif
        enddo
       else
         worka=work
       endif
     deallocate(WORK)
-if (2.gt.3) then ! clt
-allocate(WORK(km_all,1:nm,1:mm))
-allocate(A3D(km3_all,1:nm,1:mm,lm_a))
-allocate(F3D(km3_all,1:nm,1:mm,lm))
-
-                                                 call btim(filt2an_tim)
-    call this%filt_to_anal(WORK)
-
-    call this%S2C_ens(WORK,F3D,1,nm,1,mm,lm,km,km_all)
-
- if(lm_a>lm) then
-   if(l_lin_vertical) then
-     call this%l_vertical_direct_spec(km3_all,lm,lm_a,1,nm,1,mm,F3D,A3D)
-   else
-     call this%lwq_vertical_direct_spec(km3_all,lm,lm_a,1,nm,1,mm,              &
-                                   cvf1,cvf2,cvf3,cvf4,lref,F3D,A3D)
-   endif
- else
-
-   do L=1,lm
-     A3D(:,:,:,L)=F3D(:,:,:,L)
-   enddo
-
- endif
-
-    call this%C2S_ens(A3D,WORKA,1,nm,1,mm,lm_a,km_a,km_a_all)
-                                                 call etim(filt2an_tim)
-
-deallocate(A3D,F3D,WORK)
-endif !2.gt. 3
 !----------------------------------------------------------------------
 endsubroutine filt_to_anal_all
 
@@ -496,8 +483,10 @@ include "type_intstat_point2this.inc"
             call this%lsqr_adjoint_offset(WORK,VALL(1:km_all,1-ibm:im+ibm,1-jbm:jm+jbm),km_all,ibm,jbm)
           endif
      else
-            ibm=3
-            jbm=3
+!clttothink
+            ibm=1
+            jbm=1  ! to make the following bocoT_2d still work with 0 values of 1 bank of halo points to be 
+                   ! exchanged. 
           VALL(1:km_all,1:im,1:jm)=WORK
  !clt         call this%lin_adjoint_offset(WORK,VALL(1:km_all,1-ibm:im+ibm,1-jbm:jm+jbm),km_all,ibm,jbm)
 
@@ -505,8 +494,11 @@ include "type_intstat_point2this.inc"
 !***
 !***  Apply adjoint lateral bc on PKF and WKF
 !***
-
-         call this%bocoT_2d(VALL(1:km_all,1-ibm:im+ibm,1-jbm:jm+jbm),km_all,im,jm,ibm,jbm)
+!cltthinkdeb555
+!clt     if(.not.this%l_anal_sub_of_filt) then
+!cltorg         call this%bocoT_2d(VALL(1:km_all,1-ibm:im+ibm,1-jbm:jm+jbm),km_all,im,jm,ibm,jbm)
+         call this%bocoT_2d(VALL(1:km_all,1-this%hx:im+this%hx,1-this%hy:jm+this%hy),km_all,im,jm,this%hx,this%hy)
+ !clt    endif 
 
 !----------------------------------------------------------------------
 endsubroutine anal_to_filt
@@ -542,8 +534,11 @@ include "type_intstat_point2this.inc"
 !***
 !***  Supply boundary conditions for VALL
 !***
-
-         call this%boco_2d(VALL(1:km_all,1-ibm:im+ibm,1-jbm:jm+jbm),km_all,im,jm,ibm,jbm)
+!cltthinkdeb255
+!   if(.not.this%l_anal_sub_of_filt) then
+!cltorg         call this%boco_2d(VALL(1:km_all,1-ibm:im+ibm,1-jbm:jm+jbm),km_all,im,jm,ibm,jbm)
+         call this%boco_2d(VALL(1:km_all,1-this%hx:im+this%hx,1-this%hy:jm+this%hy),km_all,im,jm,this%hx,this%hy)
+!   endif
    if(this%l_anal_sub_of_filt) then
        WORK(:,:,:)=VALL(:,1:im,1:jm)
 !cltorg       call this%lin_direct_offset_add(VALL(1:km_all,1-ibm:im+ibm,1-jbm:jm+jbm),WORK,km_all,ibm,jbm)

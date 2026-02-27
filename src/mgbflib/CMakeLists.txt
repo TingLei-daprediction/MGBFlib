@@ -22,8 +22,11 @@ list(APPEND ${PROJECT_NAME}_src_files
   mg_parameter.f90
   mg_timers.f90
   mg_transfer.f90
+  mg_tools.f90
   mgbf_kind.f90
   mgbf_util.f90
+  phint.f90 
+  phint1.f90
  type_intstat_locpointer.inc
  type_intstat_point2this.inc
  type_parameter_locpointer.inc

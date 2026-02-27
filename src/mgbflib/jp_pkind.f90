@@ -25,7 +25,6 @@ integer,parameter:: spi=selected_int_kind(6),&
                     sp =selected_real_kind(6,30),&
                     dp =selected_real_kind(15,300),&
                     spc=sp,dpc=dp
-! Add these debug prints
 !private:: one_dpi; integer(8),parameter:: one_dpi=1
 !integer,parameter:: dpi=kind(one_dpi)
 !integer,parameter:: sp=kind(1.0)
